@@ -1,0 +1,171 @@
+{
+  "name": "Automated Movie Performance Insight Generator",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 9
+            }
+          ]
+        }
+      },
+      "id": "b530c5f6-1a61-44fe-bad5-42903df37226",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        120,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  name,\n  genre,\n  budget,\n  gross,\n  score,\n  votes,\n  runtime,\n  ROUND(gross / NULLIF(budget,0),2) AS roi\nFROM movie\nWHERE budget > 0\n  AND gross > 0\n  AND score IS NOT NULL\nORDER BY CAST(score AS numeric) DESC, gross DESC\nLIMIT 30;",
+        "options": {}
+      },
+      "id": "1be5a69a-c320-40d2-9d37-c2df44268279",
+      "name": "Postgres",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        280,
+        220
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "zFWv0kaTyZCqpE8p",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const movies = items.map(item => item.json);\n\nreturn [\n{\n  json: {\n    prompt: `\nEnd the email with:\nRegards,\nAnkit Kumar Mishra\n\nAnalyze the following movie performance data.\n\nGenerate:\n1. Top performing movies\n2. ROI insights\n3. High-budget failures\n4. Genre trends\n5. Investment recommendations\n\nWrite professional plain-text email content.\nDo not use markdown symbols like **, ##, or bullets.\nKeep proper numbering for sections and points.\n\nMovie Data:\n${JSON.stringify(movies, null, 2)}\n`\n  }\n}\n];"
+      },
+      "id": "38b6f6d3-3321-44ad-a855-4eba9e1082fd",
+      "name": "Code",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "specifyHeaders": "json",
+        "jsonHeaders": "{\n  \"Authorization\": \"Your APi key\",\n  \"Content-Type\": \"application/json\"\n}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "llama-3.3-70b-versatile"
+            },
+            {
+              "name": "messages",
+              "value": "={{[\n  {\n    \"role\": \"user\",\n    \"content\": $json.prompt\n  }\n]}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "061d8349-4951-40a9-8242-1c5baf1090d9",
+      "name": "HTTP Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        600,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "ankitmishra619288@gmail.com",
+        "toEmail": "ankitmishra619288@gmail.com",
+        "subject": "Weekly Movie Insights",
+        "emailFormat": "=text",
+        "text": "={{$json[\"choices\"][0][\"message\"][\"content\"]}}",
+        "options": {}
+      },
+      "id": "3e0d57b9-f921-4200-93a5-9496f5cd8e43",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        760,
+        220
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "nPdLRNW654KACfHp",
+          "name": "SMTP account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Postgres",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "19dd07cb-f6b1-44e1-b89e-faef68ebc527",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "741e5320fc0e7f33f797b5a1b4346e8cc9dd9713e3a8daf80a1d2dedce30b4c8"
+  },
+  "id": "F7sY2WdCEZ3o8sBh",
+  "tags": []
+}

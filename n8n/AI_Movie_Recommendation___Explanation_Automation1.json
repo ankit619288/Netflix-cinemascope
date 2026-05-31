@@ -1,0 +1,160 @@
+{
+  "name": "AI Movie Recommendation & Explanation Automation1",
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  name,\n  genre,\n  budget,\n  gross,\n  score,\n  votes,\n  runtime,\n  ROUND(gross / NULLIF(budget, 0), 2) AS roi,\n  '{{ $json.body.question }}' AS question\nFROM movie\nWHERE score IS NOT NULL\nORDER BY CAST(score AS numeric) DESC;",
+        "options": {}
+      },
+      "id": "89d89f94-7960-4255-9a57-62f0ee5717f5",
+      "name": "Postgres",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        220,
+        460
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "zFWv0kaTyZCqpE8p",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const movies = items.map(item => item.json);\n\nconst question = $('Webhook').first().json.body.question || '';\n\nconst lowerQuestion = question.toLowerCase();\n\nfunction toNumber(value) {\n  const number = Number(value);\n  return Number.isFinite(number) ? number : 0;\n}\n\nlet selectedMovies = movies;\n\nif (\n  lowerQuestion.includes('highest') ||\n  lowerQuestion.includes('top') ||\n  lowerQuestion.includes('best imdb') ||\n  lowerQuestion.includes('imdb')\n) {\n  selectedMovies = [...movies]\n    .sort((a, b) => toNumber(b.score) - toNumber(a.score))\n    .slice(0, 20);\n} else if (\n  lowerQuestion.includes('roi') ||\n  lowerQuestion.includes('profit') ||\n  lowerQuestion.includes('genre')\n) {\n  selectedMovies = movies\n    .filter(movie => toNumber(movie.budget) > 0 && toNumber(movie.gross) > 0)\n    .sort((a, b) => toNumber(b.roi) - toNumber(a.roi))\n    .slice(0, 50);\n} else {\n  const matchedMovie = movies.find(movie => {\n    const movieName = String(movie.name || '').toLowerCase();\n    return movieName && lowerQuestion.includes(movieName);\n  });\n\n  if (matchedMovie) {\n    const sameGenreMovies = movies\n      .filter(movie =>\n        movie.genre === matchedMovie.genre &&\n        movie.name !== matchedMovie.name\n      )\n      .sort((a, b) => toNumber(b.roi) - toNumber(a.roi))\n      .slice(0, 15);\n\n    selectedMovies = [matchedMovie, ...sameGenreMovies];\n  } else {\n    selectedMovies = movies.slice(0, 50);\n  }\n}\n\nlet movieText = '';\n\nfor (const movie of selectedMovies) {\n  movieText += `\nMovie: ${movie.name}\nGenre: ${movie.genre}\nBudget: ${movie.budget}\nGross: ${movie.gross}\nIMDb Score: ${movie.score}\nVotes: ${movie.votes}\nRuntime: ${movie.runtime}\nROI: ${movie.roi}\n`;\n}\n\nconst prompt = `\nYou are a professional movie analyst.\n\nAnswer the user's question using ONLY the movie dataset below.\n\nUser Question:\n${question}\n\nMovie Dataset:\n${movieText}\n\nRules:\n1. Give a short and clear answer.\n2. Use numbers from the dataset.\n3. If asked for highest IMDb score, choose the movie with the highest IMDb Score.\n4. If explaining success or failure, discuss budget, gross, ROI, IMDb score, votes, genre, and runtime.\n5. Compare with similar movies if available.\n6. Do not guess outside the dataset.\n`;\n\nreturn [\n  {\n    json: {\n      prompt\n    }\n  }\n];"
+      },
+      "id": "8e676d63-f766-46f0-97a0-f26e89b69253",
+      "name": "Code",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        360,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "API key",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Your API key"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{\n  {\n    \"model\": \"llama-3.3-70b-versatile\",\n    \"messages\": [\n      {\n        \"role\": \"user\",\n        \"content\": $json.prompt\n      }\n    ],\n    \"temperature\": 0.2\n  }\n}}",
+        "options": {}
+      },
+      "id": "8bc1aff4-3951-4d7e-9f46-e0dc05dbbb59",
+      "name": "HTTP Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        500,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{\"Question received: \" + $('Webhook').first().json.body.question + \"\\n\\nAnswer:\\n\" + $json.choices[0].message.content}}",
+        "options": {}
+      },
+      "id": "b7b5709c-9197-4eb1-ac94-890cf004ea7b",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        640,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "movie-analysis-2",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "e157c8a2-f9bd-404f-b36a-f4e1c7731d62",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        80,
+        460
+      ],
+      "webhookId": "f89d7329-34cf-4c9d-aea6-bfd5663df757"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Postgres": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Postgres",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "ed95ab61-c0b7-4fc5-8135-cb760ed5de2e",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "741e5320fc0e7f33f797b5a1b4346e8cc9dd9713e3a8daf80a1d2dedce30b4c8"
+  },
+  "id": "CfHZvqy2tctdg2Ri",
+  "tags": []
+}
